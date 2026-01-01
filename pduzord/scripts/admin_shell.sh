@@ -1,10 +1,18 @@
 #!/bin/bash
 
-DATA="data/sample_data.csv"
-CONFIG="config/racks.conf"
-LOGDIR="logs"
-SCRIPTDIR="scripts"
+# Determina el directorio base del proyecto (donde está este script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Configura rutas absolutas basadas en el directorio del proyecto
+DATA="$PROJECT_ROOT/data/sample_data.csv"
+CONFIG="$PROJECT_ROOT/config/racks.conf"
+LOGDIR="$PROJECT_ROOT/logs"
+SCRIPTDIR="$PROJECT_ROOT/scripts"
 MONITOR="$SCRIPTDIR/main_monitor.tcl"
+
+# Cambia al directorio del proyecto para ejecución consistente
+cd "$PROJECT_ROOT" || exit 1
 
 function show_menu {
     echo "==== SHELL DE ADMINISTRADOR DE RED ===="
@@ -22,16 +30,28 @@ function show_menu {
 
 function show_realtime {
     echo "Estados eléctricos en tiempo real:"
+    if [ ! -f "$DATA" ]; then
+        echo "ERROR: Archivo de datos no encontrado: $DATA"
+        return 1
+    fi
     tail -n 8 "$DATA" | awk -F, '{printf "%-8s | %5.1f A | %4d V | %2d %% | %s\n", $2, $3, $4, $5, $6}'
 }
 
 function show_config {
     echo "Configuración de racks:"
+    if [ ! -f "$CONFIG" ]; then
+        echo "ERROR: Archivo de configuración no encontrado: $CONFIG"
+        return 1
+    fi
     grep '^RACK' "$CONFIG" | awk -F, '{printf "%-8s | IP: %-15s | Capacidad: %2dA | Perfil: %s\n", $1, $2, $3, $4}'
 }
 
 function compare_racks {
     echo "Comparación entre racks (estado actual):"
+    if [ ! -f "$DATA" ]; then
+        echo "ERROR: Archivo de datos no encontrado: $DATA"
+        return 1
+    fi
     tail -n 8 "$DATA" | awk -F, '{
       alert = ($5>=90) ? "CRITICO" : ($5>=70) ? "ALTO" : "OK";
       printf "%-8s | %5.1f A (%2d%%) | %s\n", $2, $3, $5, alert;
@@ -40,7 +60,14 @@ function compare_racks {
 
 function show_logs {
     echo "Eventos recientes:"
-    tail -n 10 "$LOGDIR/log_$(date +%Y-%m-%d).txt"
+    local logfile="$LOGDIR/log_$(date +%Y-%m-%d).txt"
+    if [ ! -f "$logfile" ]; then
+        echo "No hay logs disponibles para hoy. El archivo se creará cuando se ejecute el monitoreo."
+        echo "Buscando logs disponibles..."
+        ls -t "$LOGDIR"/log_*.txt 2>/dev/null | head -1 | xargs tail -n 10 2>/dev/null || echo "No se encontraron archivos de log."
+        return 1
+    fi
+    tail -n 10 "$logfile"
 }
 
 function recommend_network_performance {
@@ -54,6 +81,15 @@ function recommend_network_performance {
 
 function run_monitor {
     echo "Ejecutando monitoreo TCL ($MONITOR)..."
+    if [ ! -f "$MONITOR" ]; then
+        echo "ERROR: Script de monitoreo no encontrado: $MONITOR"
+        return 1
+    fi
+    if ! command -v tclsh &> /dev/null; then
+        echo "ERROR: tclsh no está instalado. Por favor instálelo para ejecutar el monitoreo."
+        return 1
+    fi
+    cd "$PROJECT_ROOT" || return 1
     tclsh "$MONITOR"
     echo "-----"
 }

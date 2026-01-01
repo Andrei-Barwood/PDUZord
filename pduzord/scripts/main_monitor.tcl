@@ -5,12 +5,24 @@
 
 # Script principal para monitoreo y control de racks eléctricos via SNMP
 
-source utils.tcl
+# Determina la ruta del script para cargar utils.tcl correctamente
+set scriptDir [file dirname [file normalize [info script]]]
+source [file join $scriptDir utils.tcl]
 
-set racks {RACK1 RACK2 RACK3 RACK4 RACK5 RACK6 RACK7 RACK8}
+# Permite procesar un rack específico si se pasa como argumento
+if {$argc > 0} {
+    set racks [list [lindex $argv 0]]
+} else {
+    set racks {RACK1 RACK2 RACK3 RACK4 RACK5 RACK6 RACK7 RACK8}
+}
 
 foreach rack $racks {
-    set ip [getPduIp $rack]
+    # Valida que el rack exista
+    if {[catch {set ip [getPduIp $rack]} err]} {
+        puts "ERROR: Rack '$rack' no encontrado en la configuración"
+        continue
+    }
+    
     set cap [getRackCapacity $rack]
     set val [snmp_get_current $ip]
     set volt [snmp_get_voltage $ip]
@@ -18,10 +30,10 @@ foreach rack $racks {
 
     if {$percent > 90} {
         logCritical "$rack sobrecargado: $val A ($percent%)"
-         shutdown_low_priority_ports $ip
+        shutdown_low_priority_ports $ip
     } elseif {$percent > 70} {
         logWarning "$rack alto consumo: $val A ($percent%)"
     } else {
-        logInfo "$rack OK: $val A"
+        logInfo "$rack OK: $val A ($percent%), voltaje: ${volt}V"
     }
 }
